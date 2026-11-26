@@ -7,7 +7,7 @@ Version du 25 novembre 2026
 HMS Hospital-App est un système d'information hospitalier (SIH) web, modulaire et entièrement paramétrable, conçu pour être déployé dans un hôpital réel sans modifier le code : tout ce qui est métier (structure, tarifs, workflows, référentiels, modèles de documents) vit en base et se configure depuis un module d'administration.
 
 1. **Périmètre** : 29 services métier, de l'admission à la facturation, plus le portail patient et la téléconsultation (V2).
-2. **Style d'architecture** : monolithe modulaire NestJS (TypeScript), un dossier par service, avec séparation stricte Controller → Service → Repository → Model. Les microservices ne sont pas retenus en V1 (voir §2).
+2. **Style d'architecture** : monolithe modulaire Node.js + Express (TypeScript), un dossier par service, avec séparation stricte Controller → Service → Repository → Model. Les microservices ne sont pas retenus en V1 (voir §2).
 3. **Couplage** : les modules ne s'importent jamais entre eux ; ils communiquent par un EventBus (EventEmitter en mémoire, BullMQ pour le différé et le fiable). Chaque module peut être extrait en service plus tard.
 4. **Données** : PostgreSQL + Prisma, clés UUID, soft delete, données médicales immuables et versionnées, colonnes sensibles chiffrées.
 5. **Paramétrage** : chaque paramètre a un code, un type, une valeur par défaut, une validation, des permissions, un versioning et un journal. Les changements s'appliquent à chaud (cache Redis invalidé par événement).
@@ -18,6 +18,9 @@ HMS Hospital-App est un système d'information hospitalier (SIH) web, modulaire 
 10. **Livraison** : MVP = fondations (auth, paramétrage, audit, notifications) + patients, admission, consultation, facturation, puis V1 clinique complète, puis V2 (téléconsultation, BI avancée, HL7/FHIR actif).
 
 **Hypothèses retenues** (à confirmer) : pays et réglementation non précisés, donc RGPD comme socle avec une couche « loi locale » paramétrable ; hébergement cloud européen ; TypeScript plutôt que JavaScript pur, pour la sûreté de typage d'un SI de santé (l'arborescence demandée est conservée, avec l'extension `.ts`).
+
+**Décision du 26 novembre 2026** : le dépôt contient `docs/00-conventions.md`, désormais **source de vérité** ; en cas de divergence, il prime sur ce dossier. Sont alignés ici : Node.js + Express (et non NestJS), un schéma PostgreSQL par module, permissions `PREFIXE_RESSOURCE_ACTION`, erreurs RFC 9457, événement `parametre.updated`, et slugs de modules (notamment `bloc-operatoire` pour le bloc opératoire, y compris là où `bloc` apparaît encore dans les tableaux).
+
 
 ## 2. Architecture globale (C4) et choix techniques
 
@@ -54,7 +57,7 @@ flowchart TB
     ING[Ingress Nginx ou Traefik, TLS 1.3]
   end
   subgraph Applicatif
-    API[API NestJS, N réplicas sans état]
+    API[API Express, N réplicas sans état]
     WRK[Workers BullMQ : notifications, rapports, imports]
     RT[Passerelle temps réel WebSocket]
   end
@@ -92,7 +95,7 @@ Chaque module métier suit la chaîne `Route → Middleware → Controller → S
 
 | Choix | Raison | Alternative écartée |
 | --- | --- | --- |
-| NestJS (TypeScript) | Modules, injection de dépendances et guards natifs, qui imposent le MVC enrichi ; Swagger généré | Express nu : plus de discipline manuelle à tenir sur 30 modules |
+| Node.js + Express (TypeScript) | Reproduit à l'identique la chaîne imposée Route → Middleware → Controller → Service → Repository et l'ordre explicite des middlewares ; OpenAPI généré depuis les DTO Zod | NestJS : valable, mais impose son propre ordre d'exécution (guards, interceptors, pipes) ; ici la discipline des couches est vérifiée par dependency-cruiser et ESLint (§6.2) |
 | Monolithe modulaire | Transactions ACID entre modules, exploitation simple, coût réduit | Microservices : complexité réseau et transactions distribuées injustifiées en V1 |
 | PostgreSQL + Prisma | Intégrité relationnelle, JSONB pour le paramétrage, row-level security possible, migrations versionnées | MongoDB : mauvais fit pour facturation et intégrité |
 | Redis | Cache des paramètres et permissions, sessions, rate limiting, backend BullMQ | Cache en mémoire : incohérent avec plusieurs réplicas |
@@ -136,7 +139,7 @@ Chaque service est un module autonome `src/modules/<nom>/` contenant `controller
 | 5 | Rendez-vous et consultations (`consultation`) | Planifier et réaliser les consultations externes | Médecin, accueil | RendezVous, Agenda, Consultation, Observation, Prescription |
 | 6 | Urgences (`urgences`) | Triage, prise en charge, orientation | IOA, médecin urgentiste | PassageUrgence, Triage, CodeUrgence |
 | 7 | Hospitalisation (`hospitalisation`) | Lits, chambres, mouvements | Infirmier, cadre, médecin | Hospitalisation, Lit, Mouvement, Transfert, Sortie |
-| 8 | Bloc opératoire (`bloc`) | Planning et compte-rendu opératoire | Chirurgien, anesthésiste, IBODE | Intervention, SalleOperatoire, CompteRenduOperatoire, ChecklistBloc |
+| 8 | Bloc opératoire (`bloc-operatoire`) | Planning et compte-rendu opératoire | Chirurgien, anesthésiste, IBODE | Intervention, SalleOperatoire, CompteRenduOperatoire, ChecklistBloc |
 | 9 | Maternité (`maternite`) | Grossesse, accouchement, nourrisson | Obstétricien, sage-femme, pédiatre | Grossesse, SuiviPrenatal, Accouchement, Nouveau-né |
 | 10 | Laboratoire (`laboratoire`) | Prescription → résultat validé | Biologiste, technicien | DemandeAnalyse, Prelevement, Analyse, Resultat, Automate |
 | 11 | Imagerie (`imagerie`) | Examens, interprétation, compte-rendu | Radiologue, manipulateur | DemandeImagerie, Examen, Etude DICOM, CompteRenduImagerie |
@@ -202,7 +205,7 @@ Nommage des événements : `<domaine>.<objet>.<verbe passé>`. Chaque événemen
 | Module | Émet | Écoute | KPI et statistiques |
 | --- | --- | --- | --- |
 | auth | `user.logged_in`, `user.locked`, `mfa.failed` | `staff.contract_ended` | Taux d'activation MFA, échecs de connexion |
-| parametrage | `setting.changed`, `referential.published` |  | Paramètres modifiés par période |
+| parametrage | `parametre.updated`, `referential.published` |  | Paramètres modifiés par période |
 | patients | `patient.created`, `patient.merged` | `admission.created` | Doublons détectés, nouveaux patients |
 | admission | `patient.admitted`, `patient.oriented` | `appointment.checked_in` | Temps d'attente à l'accueil |
 | consultation | `appointment.booked`, `consultation.closed`, `prescription.created` | `patient.admitted`, `lab.result.ready` | Taux de non-présentation, consultations par médecin |
@@ -247,7 +250,7 @@ Les modules **auth**, **parametrage**, **audit** et **notifications** sont des f
 
 ## 4. Acteurs et contrôle d'accès (RBAC + ABAC)
 
-Les droits se composent de trois couches : un **rôle** donne un ensemble de permissions, une **permission** a la forme `MODULE_ACTION` (ex. `PHARMACIE_DISPENSE`, `LABORATOIRE_VALIDATE`, `FACTURATION_REFUND`), et des **attributs** (ABAC) restreignent l'accès à un contexte : service de rattachement, relation de soin active avec le patient, garde en cours, site. Les rôles, permissions et attributions sont des données paramétrables, pas du code. La matrice est exportée par `GET /api/v1/roles/matrix?format=csv|xlsx|json` et fournie comme seed (`prisma/seed/rbac.csv`).
+Les droits se composent de trois couches : un **rôle** donne un ensemble de permissions, une **permission** a la forme `PREFIXE_RESSOURCE_ACTION` (ex. `PHARMACIE_DISPENSATION_CREATE`, `LABO_RESULTAT_VALIDATE`, `FACT_PAIEMENT_REFUND`), et des **attributs** (ABAC) restreignent l'accès à un contexte : service de rattachement, relation de soin active avec le patient, garde en cours, site. Les rôles, permissions et attributions sont des données paramétrables, pas du code. La matrice est exportée par `GET /api/v1/roles/matrix?format=csv|xlsx|json` et fournie comme seed (`prisma/seed/rbac.csv`).
 
 ### 4.1 Les 23 rôles
 
@@ -347,7 +350,7 @@ Le module `parametrage` est la source unique de toute valeur métier : le code n
 
 1. **Résolution par portée** : service, puis établissement, puis global, puis valeur par défaut. La plus spécifique gagne.
 2. **Cycle de vie** : brouillon → relecture → approbation (si critique) → publication → effet à la date choisie. Retour à une version antérieure en un clic.
-3. **Application à chaud** : la publication émet `setting.changed` ; les réplicas invalident leur cache Redis. Aucun redémarrage.
+3. **Application à chaud** : la publication émet `parametre.updated` ; les réplicas invalident leur cache Redis. Aucun redémarrage.
 4. **Prévisualisation** : un paramètre ou un workflow modifié peut être testé sur un jeu de données fictif avant publication.
 5. **Export et import** : jeu de paramètres sérialisé en JSON ou YAML pour promouvoir staging vers production, avec diff avant import.
 6. **Secrets** : les paramètres de type `secret` sont stockés dans le coffre (Vault ou équivalent), jamais affichés ni journalisés en clair.
@@ -448,7 +451,7 @@ flowchart LR
 
 ### 6.1 Arborescence du projet
 
-L'arborescence demandée est reprise telle quelle, avec l'extension `.ts` (NestJS + TypeScript) et un fichier `*.module.ts` par module pour l'injection de dépendances.
+L'arborescence demandée est reprise telle quelle, avec l'extension `.ts` (Express + TypeScript) et un fichier `index.ts` par module qui assemble routes, contrôleurs et services (composition manuelle).
 
 ```text
 backend/
@@ -472,8 +475,8 @@ backend/
 │   │   │   ├── dtos/auth.dto.ts
 │   │   │   ├── validators/auth.validator.ts
 │   │   │   ├── tests/auth.test.ts
-│   │   │   └── auth.module.ts
-│   │   ├── patients/  admission/  consultation/  urgences/  hospitalisation/  bloc/
+│   │   │   └── index.ts
+│   │   ├── patients/  admission/  consultation/  urgences/  hospitalisation/  bloc-operatoire/
 │   │   ├── maternite/  laboratoire/  imagerie/  pharmacie/  sterilisation/  banque-sang/
 │   │   ├── reanimation/  soins-infirmiers/  facturation/  personnel/  stock/
 │   │   ├── maintenance/  restauration/  hygiene/  archivage/  notifications/
@@ -502,7 +505,7 @@ backend/
 | `*.dto.ts` | Schémas Zod d'entrée et de sortie | Logique métier |
 | `*.validator.ts` | Règles de validation détaillées | Accès BDD |
 
-**Application automatique** : `dependency-cruiser` et une règle ESLint font échouer la CI si un module en importe un autre, si un controller importe un repository, ou si un service importe `express` ou `@nestjs/common` pour lire une requête.
+**Application automatique** : `dependency-cruiser` et une règle ESLint font échouer la CI si un module en importe un autre, si un controller importe un repository, ou si un service importe `express` ou `node:http` pour lire une requête.
 
 ### 6.3 Chaîne de middlewares
 
@@ -531,7 +534,7 @@ sequenceDiagram
   participant DB as PostgreSQL
   participant EB as EventBus
   UI->>MW: POST /api/v1/dispensations
-  MW->>MW: authenticate, authorize PHARMACIE_DISPENSE, auditLog, validate, rateLimit
+  MW->>MW: authenticate, authorize PHARMACIE_DISPENSATION_CREATE, auditLog, validate, rateLimit
   MW->>C: requête validée
   C->>S: dispense(dto, user)
   S->>S: contrôle séparation des tâches et ordonnance validée
@@ -560,7 +563,7 @@ sequenceDiagram
 | --- | --- |
 | Versionnement d'API | Préfixe `/api/v1` ; une rupture crée `/api/v2` en parallèle |
 | Pagination | Par curseur sur les listes volumineuses, par page pour les petites |
-| Erreurs | Format unique `{ code, message, details, correlationId }` ; codes métier stables |
+| Erreurs | Format unique RFC 9457 (`application/problem+json`) : type, title, status, detail, instance, correlationId ; codes métier stables |
 | Journalisation | `pino` JSON, identifiant de corrélation propagé de l'ingress aux workers, **masquage** des champs de santé et d'identité |
 | Documentation | OpenAPI généré depuis les DTO Zod, publié par module |
 | Dates | Stockage en UTC, affichage selon `l10n.timezone` |
@@ -602,7 +605,7 @@ frontend/src/
 
 ### 7.2 Guards et interface pilotée par les permissions
 
-- Le jeton de session porte la liste des permissions ; un composant `<Can permission="PHARMACIE_DISPENSE">` masque ce que l'utilisateur ne peut pas faire. **Le masquage est un confort : le contrôle réel reste côté serveur.**
+- Le jeton de session porte la liste des permissions ; un composant `<Can permission="PHARMACIE_DISPENSATION_CREATE">` masque ce que l'utilisateur ne peut pas faire. **Le masquage est un confort : le contrôle réel reste côté serveur.**
 - Le menu est généré depuis les permissions et le paramétrage des modules actifs, donc un module désactivé pour un hôpital disparaît de l'interface sans modification de code.
 - Un layout par famille de rôles (soignant, accueil et caisse, pharmacie et laboratoire, administration, patient) adapte la navigation et la densité d'information.
 - Les écrans de saisie clinique et les formulaires de **paramétrage** sont générés depuis des schémas (champs, validations, libellés) pour que la console couvre tous les paramètres du §5 sans développement par paramètre.
@@ -629,7 +632,7 @@ Les données locales sont chiffrées avec une clé dérivée de la session et pu
 
 ## 8. Modèle de données
 
-Le schéma est unique (PostgreSQL), géré par Prisma, avec un préfixe de table par module pour que chaque module reste propriétaire de ses tables : un module ne lit jamais directement la table d'un autre, il passe par son API interne ou un événement. L'ERD ci-dessous montre le noyau transverse ; les entités propres à un module (stérilisation, maintenance, restauration…) se rattachent au patient, au personnel ou à l'établissement par les mêmes clés.
+La base est PostgreSQL 16, gérée par Prisma, avec un schéma PostgreSQL par module (patients, pharmacie, …) pour que chaque module reste propriétaire de ses tables : un module ne lit jamais directement la table d'un autre, il passe par son API interne ou un événement. L'ERD ci-dessous montre le noyau transverse ; les entités propres à un module (stérilisation, maintenance, restauration…) se rattachent au patient, au personnel ou à l'établissement par les mêmes clés.
 
 ### 8.1 ERD du noyau
 
@@ -752,7 +755,7 @@ Types abrégés : `uuid`, `text`, `int`, `dec` (décimal), `ts` (timestamptz), `
 
 | Sujet | Règle |
 | --- | --- |
-| Nommage | `snake_case`, tables au singulier préfixées par module (`pharmacie_lot_stock`) |
+| Nommage | `snake_case`, tables au pluriel, un schéma PostgreSQL par module, noms singuliers de l'ERD = noms conceptuels (`pharmacie.lots_stock`) |
 | Clés primaires | UUID (v4 conforme à la demande ; ULID ou UUID v7 recommandé si la localité d'index devient un problème d'écriture) |
 | Traçabilité | Toutes les tables : `created_at`, `created_by`, `updated_at`, `updated_by`, `version` |
 | Soft delete | `deleted_at` sur les données administratives ; **interdit** sur les données médicales, financières et d'audit (correction par nouvelle version ou écriture inverse) |
@@ -995,7 +998,7 @@ Trois principes guident la conception : **moindre privilège** (rien n'est acces
 
 | Exigence | Mise en œuvre | Vérification |
 | --- | --- | --- |
-| RBAC + ABAC | Permissions `MODULE_ACTION`, attributs service / relation de soin / garde (§4) | Tests d'autorisation automatisés sur chaque route |
+| RBAC + ABAC | Permissions `PREFIXE_RESSOURCE_ACTION`, attributs service / relation de soin / garde (§4) | Tests d'autorisation automatisés sur chaque route |
 | Audit des accès médicaux | `auditLog` sur toute lecture et écriture de données de santé : qui, quoi, quel patient, depuis où, pourquoi ; table append-only avec chaîne de hachage | Rapport d'anomalies, revue trimestrielle par l'auditeur |
 | Chiffrement en transit | TLS 1.3 de bout en bout ; HSTS ; mTLS entre pods si le maillage de services est activé | Scan TLS en CI et en prod |
 | Chiffrement au repos | Volumes chiffrés (AES-256), SSE-KMS sur S3, sauvegardes chiffrées | Contrôle de configuration automatisé |
