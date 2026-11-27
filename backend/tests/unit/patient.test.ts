@@ -3,6 +3,7 @@ import { NoopUnitOfWork } from '../../src/core/database/prisma';
 import type { PatientRecord } from '../../src/modules/patient/models/patient.model';
 import type { PatientRepository } from '../../src/modules/patient/repositories/patient.repository';
 import { formatMrn, maskNationalId, nationalIdHash, normalizeName, scoreCandidate, similarity } from '../../src/modules/patient/services/patient.logic';
+import { MergeService } from '../../src/modules/patient/services/merge.service';
 import { PatientService } from '../../src/modules/patient/services/patient.service';
 
 const KEY = randomBytes(32).toString('base64');
@@ -38,7 +39,7 @@ function record(over: Partial<PatientRecord> = {}): PatientRecord {
   return {
     id: 'p1', etablissementId: 'e1', mrn: 'P-2026-000001', lastName: 'Dupont', firstName: 'Marie', lastNameNorm: 'dupont', firstNameNorm: 'marie',
     birthDate: new Date('1990-05-01'), sex: 'F', phone: null, email: null, address: null, nationalIdEnc: null, nationalIdHash: null,
-    confidentiality: 'NORMAL', active: true, ...over,
+    confidentiality: 'NORMAL', active: true, mergedIntoId: null, ...over,
   };
 }
 
@@ -107,5 +108,73 @@ describe('PatientService', () => {
     const { svc, repo } = setup([record()]);
     await svc.search({ q: 'Dupont', limit: 20, offset: 0 }, actor());
     expect(repo.search).toHaveBeenCalledWith('e1', { text: 'dupont', birthDate: undefined }, false, 20, 0);
+  });
+});
+
+describe('MergeService', () => {
+  function mergeSetup(needsApproval = true, patients: PatientRecord[] = [record({ id: 'a' }), record({ id: 'b', mrn: 'P-2' })]) {
+    const merges = new Map<string, Record<string, unknown> & { id: string; status: string }>();
+    const repo = {
+      findById: jest.fn(async (id: string) => patients.find((p) => p.id === id) ?? null),
+      findPendingMergeFor: jest.fn(async () => [...merges.values()].find((m) => m.status === 'PENDING') ?? null),
+      createMerge: jest.fn(async (i) => {
+        const m = { id: `m${merges.size + 1}`, decidedBy: null, decisionNote: null, decidedAt: null, createdAt: new Date(), ...i };
+        merges.set(m.id, m);
+        return m;
+      }),
+      findMerge: jest.fn(async (id: string) => merges.get(id) ?? null),
+      decideMerge: jest.fn(async (id: string, status: string) => {
+        const m = merges.get(id);
+        if (!m || m.status !== 'PENDING') return false;
+        m.status = status;
+        return true;
+      }),
+      markMerged: jest.fn(async () => undefined),
+    };
+    const events = { publish: jest.fn(async () => ({}) as never) };
+    const settings = { get: jest.fn(async () => needsApproval) };
+    const svc = new MergeService(repo as unknown as PatientRepository, new NoopUnitOfWork(), events, settings as never);
+    return { svc, repo, events };
+  }
+  const req = { sourceId: 'a', targetId: 'b', reason: 'Même personne' };
+
+  it('met la fusion en attente puis l\'exécute à l\'approbation par une autre personne', async () => {
+    const { svc, repo, events } = mergeSetup();
+    const m = await svc.request(req, actor());
+    expect(m.status).toBe('PENDING');
+    expect(repo.markMerged).not.toHaveBeenCalled();
+    await svc.approve(m.id, { ...actor(), userId: 'approver' });
+    expect(repo.markMerged).toHaveBeenCalledWith('a', 'b', 'approver', undefined);
+    expect(events.publish).toHaveBeenCalledWith(expect.objectContaining({ type: 'patient.merged' }), undefined);
+  });
+
+  it('interdit l\'auto-approbation (séparation des tâches) et la double décision', async () => {
+    const { svc } = mergeSetup();
+    const m = await svc.request(req, actor());
+    await expect(svc.approve(m.id, actor())).rejects.toMatchObject({ code: 'sod_violation' });
+    await svc.approve(m.id, { ...actor(), userId: 'other' });
+    await expect(svc.approve(m.id, { ...actor(), userId: 'third' })).rejects.toMatchObject({ code: 'merge_already_decided' });
+  });
+
+  it('exécute immédiatement quand l\'approbation n\'est pas exigée', async () => {
+    const { svc, repo } = mergeSetup(false);
+    expect((await svc.request(req, actor())).status).toBe('COMPLETED');
+    expect(repo.markMerged).toHaveBeenCalled();
+  });
+
+  it('refuse source = cible, dossier déjà fusionné et demande en double', async () => {
+    const { svc } = mergeSetup();
+    await expect(svc.request({ ...req, targetId: 'a' }, actor())).rejects.toMatchObject({ code: 'merge_same_patient' });
+    await svc.request(req, actor());
+    await expect(svc.request(req, actor())).rejects.toMatchObject({ code: 'merge_pending' });
+    const { svc: s2 } = mergeSetup(true, [record({ id: 'a', mergedIntoId: 'z' }), record({ id: 'b' })]);
+    await expect(s2.request(req, actor())).rejects.toMatchObject({ code: 'patient_merged' });
+  });
+
+  it('rejette une demande avec un motif', async () => {
+    const { svc, repo } = mergeSetup();
+    const m = await svc.request(req, actor());
+    expect((await svc.reject(m.id, 'Personnes différentes', { ...actor(), userId: 'o' })).status).toBe('REJECTED');
+    expect(repo.markMerged).not.toHaveBeenCalled();
   });
 });

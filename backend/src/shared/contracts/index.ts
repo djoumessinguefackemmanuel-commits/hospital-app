@@ -46,6 +46,7 @@ export const EventTypes = {
   ROLE_REVOKED: 'role.revoked',
   PATIENT_CREATED: 'patient.created',
   PATIENT_UPDATED: 'patient.updated',
+  PATIENT_MERGED: 'patient.merged',
 } as const;
 
 // ── Paramétrage ───────────────────────────────────────────────────────────────

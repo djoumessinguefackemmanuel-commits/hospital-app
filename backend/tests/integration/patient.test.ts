@@ -25,6 +25,8 @@ maybe('API patients (PostgreSQL réel)', () => {
   let reception: string;
   let nobody: string;
   let vip: string;
+  let approver: string;
+  let both: string;
 
   async function token(label: string, permissions: string[]): Promise<string> {
     const etab = await prisma.etablissement.findFirstOrThrow({ where: { code: 'PRINCIPAL' } });
@@ -42,7 +44,9 @@ maybe('API patients (PostgreSQL réel)', () => {
   }
 
   beforeAll(async () => {
-    reception = await token('pat-reception', ['PATIENT_DOSSIER_READ', 'PATIENT_DOSSIER_CREATE', 'PATIENT_DOSSIER_UPDATE']);
+    reception = await token('pat-reception', ['PATIENT_DOSSIER_READ', 'PATIENT_DOSSIER_CREATE', 'PATIENT_DOSSIER_UPDATE', 'PATIENT_FUSION_REQUEST']);
+    approver = await token('pat-approver', ['PATIENT_DOSSIER_READ', 'PATIENT_FUSION_APPROVE']);
+    both = await token('pat-both', ['PATIENT_DOSSIER_READ', 'PATIENT_FUSION_REQUEST', 'PATIENT_FUSION_APPROVE']);
     nobody = await token('pat-nobody', []);
     vip = await token('pat-vip', ['PATIENT_DOSSIER_READ', 'PATIENT_DOSSIER_CREATE', 'PATIENT_DOSSIER_READ_RESTRICTED']);
   });
@@ -105,5 +109,35 @@ maybe('API patients (PostgreSQL réel)', () => {
     await new Promise((r) => setTimeout(r, 300));
     const logs = await prisma.auditLog.findMany({ where: { patientId: id, action: 'PATIENT_READ' } });
     expect(logs.length).toBeGreaterThan(0);
+  });
+
+  it('fusion : demande, séparation des tâches, approbation, dossier source désactivé', async () => {
+    const mk = async (n: string) =>
+      (await api.post('/api/v1/patients').set(bearer(reception)).send({ lastName: `Fus${n}${run}`, firstName: `P${n}`, birthDate: `19${n}0-01-01`, sex: 'F', confirmNotDuplicate: true })).body.data.id as string;
+    const [src, dst] = [await mk('1'), await mk('2')];
+
+    expect((await api.post('/api/v1/patients/merges').set(bearer(nobody)).send({ sourceId: src, targetId: dst, reason: 'Doublon avéré' })).status).toBe(403);
+    const req = await api.post('/api/v1/patients/merges').set(bearer(both)).send({ sourceId: src, targetId: dst, reason: 'Doublon avéré' });
+    expect(req.status).toBe(202);
+    expect(req.body.data.status).toBe('PENDING');
+    const mid = req.body.data.id as string;
+
+    expect((await api.post('/api/v1/patients/merges').set(bearer(reception)).send({ sourceId: src, targetId: dst, reason: 'Encore' })).status).toBe(409);
+    const self = await api.post(`/api/v1/patients/merges/${mid}/approve`).set(bearer(both));
+    expect(self.status).toBe(403);
+    expect(self.body.code).toBe('sod_violation');
+    expect((await api.post(`/api/v1/patients/merges/${mid}/approve`).set(bearer(reception))).status).toBe(403);
+
+    const ok = await api.post(`/api/v1/patients/merges/${mid}/approve`).set(bearer(approver));
+    expect(ok.status).toBe(200);
+    expect(ok.body.data.status).toBe('COMPLETED');
+    expect((await api.post(`/api/v1/patients/merges/${mid}/approve`).set(bearer(approver))).status).toBe(409);
+
+    const source = (await api.get(`/api/v1/patients/${src}`).set(bearer(reception))).body.data;
+    expect(source).toMatchObject({ active: false, mergedIntoId: dst });
+    expect((await api.patch(`/api/v1/patients/${src}`).set(bearer(reception)).send({ phone: '+33 1 02 03 04 05' })).status).toBe(422);
+    const found = await api.get('/api/v1/patients').query({ q: `fus1${run}` }).set(bearer(reception));
+    expect(found.body.data).toHaveLength(0);
+    expect((await api.get('/api/v1/patients/merges').query({ status: 'COMPLETED' }).set(bearer(reception))).body.data.length).toBeGreaterThan(0);
   });
 });

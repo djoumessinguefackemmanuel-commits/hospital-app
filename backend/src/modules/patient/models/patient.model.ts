@@ -18,6 +18,7 @@ export interface PatientRecord {
   nationalIdHash: string | null;
   confidentiality: Confidentiality;
   active: boolean;
+  mergedIntoId: string | null;
 }
 
 export interface NewPatient {
@@ -39,7 +40,7 @@ export interface NewPatient {
 }
 
 export type PatientPatch = Partial<
-  Pick<PatientRecord, 'lastName' | 'firstName' | 'lastNameNorm' | 'firstNameNorm' | 'birthDate' | 'sex' | 'phone' | 'email' | 'address' | 'confidentiality' | 'active' | 'nationalIdEnc' | 'nationalIdHash'>
+  Pick<PatientRecord, 'lastName' | 'firstName' | 'lastNameNorm' | 'firstNameNorm' | 'birthDate' | 'sex' | 'phone' | 'email' | 'address' | 'confidentiality' | 'active' | 'mergedIntoId' | 'nationalIdEnc' | 'nationalIdHash'>
 >;
 
 /** Vue publique : l'identifiant national n'est jamais renvoyé en clair. */
@@ -56,6 +57,7 @@ export interface PatientView {
   nationalIdMasked: string | null;
   confidentiality: Confidentiality;
   active: boolean;
+  mergedIntoId: string | null;
 }
 
 export interface DuplicateCandidate {
@@ -72,4 +74,20 @@ export interface PatientActor {
   etablissementId: string;
   permissions: string[];
   correlationId?: string;
+}
+
+export type MergeStatus = 'PENDING' | 'COMPLETED' | 'REJECTED';
+
+export interface MergeRecord {
+  id: string;
+  etablissementId: string;
+  sourceId: string;
+  targetId: string;
+  status: MergeStatus;
+  reason: string;
+  requestedBy: string;
+  decidedBy: string | null;
+  decisionNote: string | null;
+  decidedAt: Date | null;
+  createdAt: Date;
 }

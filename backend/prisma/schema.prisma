@@ -367,6 +367,8 @@ model Patient {
   nationalIdHash  String?         @map("national_id_hash")
   confidentiality Confidentiality @default(NORMAL)
   active          Boolean         @default(true)
+  /// Renseigné quand le dossier a été fusionné dans un autre (jamais supprimé : traçabilité)
+  mergedIntoId    String?         @map("merged_into_id") @db.Uuid
   createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz
   updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz
   createdBy       String?         @map("created_by") @db.Uuid
@@ -387,5 +389,34 @@ model MrnCounter {
 
   @@id([etablissementId, year])
   @@map("mrn_counters")
+  @@schema("patient")
+}
+
+enum MergeStatus {
+  PENDING
+  COMPLETED
+  REJECTED
+
+  @@map("merge_status")
+  @@schema("patient")
+}
+
+model PatientMerge {
+  id              String      @id @default(uuid()) @db.Uuid
+  etablissementId String      @map("etablissement_id") @db.Uuid
+  sourceId        String      @map("source_id") @db.Uuid
+  targetId        String      @map("target_id") @db.Uuid
+  status          MergeStatus
+  reason          String
+  requestedBy     String      @map("requested_by") @db.Uuid
+  decidedBy       String?     @map("decided_by") @db.Uuid
+  decisionNote    String?     @map("decision_note")
+  decidedAt       DateTime?   @map("decided_at") @db.Timestamptz
+  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([etablissementId, status])
+  @@index([sourceId])
+  @@index([targetId])
+  @@map("patient_merges")
   @@schema("patient")
 }

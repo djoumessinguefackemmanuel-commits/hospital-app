@@ -47,3 +47,16 @@ export const searchQueryDto = z
 export type CreatePatientDto = z.infer<typeof createPatientDto>;
 export type UpdatePatientDto = z.infer<typeof updatePatientDto>;
 export type SearchQueryDto = z.infer<typeof searchQueryDto>;
+
+export const requestMergeDto = z.object({
+  sourceId: z.string().uuid(),
+  targetId: z.string().uuid(),
+  reason: z.string().trim().min(5).max(500),
+});
+export const rejectMergeDto = z.object({ note: z.string().trim().min(3).max(500) });
+export const mergeIdParamsDto = z.object({ id: z.string().uuid() });
+export const listMergesQueryDto = z.object({
+  status: z.enum(['PENDING', 'COMPLETED', 'REJECTED']).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+});

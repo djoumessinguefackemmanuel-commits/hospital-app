@@ -1,4 +1,4 @@
-import { AppError, ForbiddenError, NotFoundError } from '../../../core/errors/app-error';
+import { AppError, BusinessRuleError, ForbiddenError, NotFoundError } from '../../../core/errors/app-error';
 import { decryptString, encryptString } from '../../../core/security/crypto';
 import { EventTypes, type EventPublisher, type SettingsReader, type UnitOfWork } from '../../../shared/contracts';
 import type { PatientActor, PatientPatch, PatientRecord, PatientView } from '../models/patient.model';
@@ -32,6 +32,7 @@ export class PatientService {
       nationalIdMasked: p.nationalIdEnc ? maskNationalId(decryptString(this.encryptionKey, p.nationalIdEnc)) : null,
       confidentiality: p.confidentiality,
       active: p.active,
+      mergedIntoId: p.mergedIntoId,
     };
   }
 
@@ -40,7 +41,7 @@ export class PatientService {
   }
 
   /** Charge un dossier en appliquant l'isolement par établissement et la confidentialité. */
-  private async load(id: string, actor: PatientActor): Promise<PatientRecord> {
+  async load(id: string, actor: PatientActor): Promise<PatientRecord> {
     const p = await this.repo.findById(id);
     if (!p || p.etablissementId !== actor.etablissementId) throw new NotFoundError('Dossier introuvable', 'patient_not_found');
     if (p.confidentiality === 'RESTRICTED' && !this.canSeeRestricted(actor)) {
@@ -119,6 +120,7 @@ export class PatientService {
 
   async update(id: string, input: UpdatePatientDto, actor: PatientActor): Promise<PatientView> {
     const current = await this.load(id, actor);
+    if (current.mergedIntoId) throw new BusinessRuleError('Dossier fusionné : modifiez le dossier cible', 'patient_merged');
     if (input.confidentiality && input.confidentiality !== current.confidentiality && !this.canSeeRestricted(actor)) {
       throw new ForbiddenError('Droit insuffisant pour changer la confidentialité', 'patient_restricted');
     }
