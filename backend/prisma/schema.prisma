@@ -11,7 +11,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
-  schemas  = ["auth", "parametrage", "shared"]
+  schemas  = ["auth", "parametrage", "shared", "patient"]
 }
 
 // ───────────────────────────── parametrage ─────────────────────────────
@@ -327,4 +327,65 @@ model RefreshToken {
   @@index([familyId])
   @@map("refresh_tokens")
   @@schema("auth")
+}
+
+enum PatientSex {
+  M
+  F
+  OTHER
+  UNKNOWN
+
+  @@map("patient_sex")
+  @@schema("patient")
+}
+
+enum Confidentiality {
+  NORMAL
+  RESTRICTED
+
+  @@map("confidentiality")
+  @@schema("patient")
+}
+
+model Patient {
+  id              String          @id @default(uuid()) @db.Uuid
+  etablissementId String          @map("etablissement_id") @db.Uuid
+  /// Numéro de dossier, unique par établissement (format paramétrable patient.mrn.format)
+  mrn             String
+  lastName        String          @map("last_name")
+  firstName       String          @map("first_name")
+  /// Noms normalisés (minuscules, sans accents) pour la recherche et la détection de doublons
+  lastNameNorm    String          @map("last_name_norm")
+  firstNameNorm   String          @map("first_name_norm")
+  birthDate       DateTime        @map("birth_date") @db.Date
+  sex             PatientSex      @default(UNKNOWN)
+  phone           String?
+  email           String?
+  address         String?
+  /// Identifiant national chiffré (AES-256-GCM) + empreinte HMAC pour la recherche exacte
+  nationalIdEnc   String?         @map("national_id_enc")
+  nationalIdHash  String?         @map("national_id_hash")
+  confidentiality Confidentiality @default(NORMAL)
+  active          Boolean         @default(true)
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz
+  createdBy       String?         @map("created_by") @db.Uuid
+  updatedBy       String?         @map("updated_by") @db.Uuid
+
+  @@unique([etablissementId, mrn])
+  @@index([etablissementId, birthDate])
+  @@index([etablissementId, lastNameNorm])
+  @@index([etablissementId, nationalIdHash])
+  @@map("patients")
+  @@schema("patient")
+}
+
+model MrnCounter {
+  etablissementId String @map("etablissement_id") @db.Uuid
+  year            Int
+  last            Int    @default(0)
+
+  @@id([etablissementId, year])
+  @@map("mrn_counters")
+  @@schema("patient")
 }

@@ -44,6 +44,8 @@ export const EventTypes = {
   MFA_FAILED: 'mfa.failed',
   ROLE_GRANTED: 'role.granted',
   ROLE_REVOKED: 'role.revoked',
+  PATIENT_CREATED: 'patient.created',
+  PATIENT_UPDATED: 'patient.updated',
 } as const;
 
 // ── Paramétrage ───────────────────────────────────────────────────────────────

@@ -11,6 +11,8 @@ import { createErrorHandler, createMiddlewares, notFoundHandler, requestContext 
 import { JwtService } from './core/security/jwt';
 import { createAuthModule } from './modules/auth';
 import { PrismaAuthRepository, type AuthRepository } from './modules/auth/repositories/auth.repository';
+import { createPatientModule, PrismaPatientRepository } from './modules/patient';
+import type { PatientRepository } from './modules/patient/repositories/patient.repository';
 import { createParametrageModule } from './modules/parametrage';
 import { PrismaParametrageRepository, type ParametrageRepository } from './modules/parametrage/repositories/parametrage.repository';
 
@@ -26,10 +28,11 @@ export interface AppDeps {
   /** Dépôts : Prisma en production, doublures en mémoire dans les tests. */
   authRepo: AuthRepository;
   parametrageRepo: ParametrageRepository;
+  patientRepo: PatientRepository;
 }
 
 export function prismaRepositories(prisma: PrismaClient) {
-  return { authRepo: new PrismaAuthRepository(prisma), parametrageRepo: new PrismaParametrageRepository(prisma) };
+  return { authRepo: new PrismaAuthRepository(prisma), parametrageRepo: new PrismaParametrageRepository(prisma), patientRepo: new PrismaPatientRepository(prisma) };
 }
 
 /**
@@ -64,6 +67,14 @@ export function buildApp(deps: AppDeps): Express {
     encryptionKey: deps.encryptionKey,
   });
 
+  const patient = createPatientModule({
+    repo: deps.patientRepo,
+    uow: deps.uow,
+    events: deps.bus,
+    settings: parametrage.service,
+    encryptionKey: deps.encryptionKey,
+  });
+
   const middlewares = createMiddlewares({
     jwt,
     access: auth.access,
@@ -81,6 +92,7 @@ export function buildApp(deps: AppDeps): Express {
   });
 
   app.use('/api/v1/auth', auth.createRouter(middlewares));
+  app.use('/api/v1/patients', patient.createRouter(middlewares));
   app.use('/api/v1/parametrage', parametrage.createRouter(middlewares));
 
   app.use(notFoundHandler);
