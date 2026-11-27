@@ -1,0 +1,330 @@
+// Schéma Prisma : un schéma PostgreSQL par module (docs/00-conventions.md, D3).
+// Convention : snake_case, tables au pluriel, UUID, colonnes d'audit, soft delete administratif.
+// Les schémas `auth` et `parametrage` appartiennent à leurs modules ; `shared` porte le transverse
+// (Role, Permission, AuditLog, OutboxEvent).
+
+generator client {
+  provider        = "prisma-client-js"
+  engineType      = "client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = ["auth", "parametrage", "shared"]
+}
+
+// ───────────────────────────── parametrage ─────────────────────────────
+
+model Etablissement {
+  id         String   @id @default(uuid()) @db.Uuid
+  code       String   @unique
+  name       String
+  timezone   String   @default("UTC")
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  createdBy  String?  @map("created_by") @db.Uuid
+  updatedBy  String?  @map("updated_by") @db.Uuid
+  deletedAt  DateTime? @map("deleted_at") @db.Timestamptz
+  deletedBy  String?  @map("deleted_by") @db.Uuid
+
+  users User[]
+
+  @@map("etablissements")
+  @@schema("parametrage")
+}
+
+enum ParametreType {
+  STRING
+  INT
+  DECIMAL
+  BOOL
+  ENUM
+  LIST
+  MAP
+  JSON
+  DATE
+  DURATION
+  CRON
+  URL
+  SECRET
+
+  @@map("parametre_type")
+  @@schema("parametrage")
+}
+
+enum ScopeType {
+  GLOBAL
+  ETABLISSEMENT
+  SERVICE
+  ROLE
+
+  @@map("scope_type")
+  @@schema("parametrage")
+}
+
+enum ParametreStatus {
+  DRAFT
+  PENDING_APPROVAL
+  PUBLISHED
+  RETIRED
+
+  @@map("parametre_status")
+  @@schema("parametrage")
+}
+
+/// Définition d'un paramètre : code, type, défaut, validation, permission de modification.
+model ParametreDefinition {
+  id             String        @id @default(uuid()) @db.Uuid
+  code           String        @unique
+  module         String
+  label          Json // { "fr": "...", "en": "..." }
+  type           ParametreType
+  defaultValue   Json          @map("default_value")
+  /// Contraintes : { min, max, enum, pattern, itemType }
+  validation     Json          @default("{}")
+  allowedScopes  ScopeType[]   @map("allowed_scopes")
+  editPermission String        @map("edit_permission")
+  critical       Boolean       @default(false)
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+  createdBy      String?       @map("created_by") @db.Uuid
+  updatedBy      String?       @map("updated_by") @db.Uuid
+
+  values  ParametreValue[]
+  history ParametreChangelog[]
+
+  @@map("parametre_definitions")
+  @@schema("parametrage")
+}
+
+/// Valeur versionnée d'un paramètre pour une portée donnée.
+model ParametreValue {
+  id            String          @id @default(uuid()) @db.Uuid
+  definitionId  String          @map("definition_id") @db.Uuid
+  scopeType     ScopeType       @map("scope_type")
+  /// '*' pour la portée GLOBAL (pas de NULL : l'unicité des versions reste garantie par PostgreSQL),
+  /// identifiant d'établissement ou de service, ou code de rôle pour la portée ROLE
+  scopeId       String          @default("*") @map("scope_id")
+  version       Int
+  value         Json
+  status        ParametreStatus
+  effectiveFrom DateTime        @default(now()) @map("effective_from") @db.Timestamptz
+  reason        String?
+  approvedBy    String?         @map("approved_by") @db.Uuid
+  approvedAt    DateTime?       @map("approved_at") @db.Timestamptz
+  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  createdBy     String?         @map("created_by") @db.Uuid
+
+  definition ParametreDefinition @relation(fields: [definitionId], references: [id])
+
+  @@unique([definitionId, scopeType, scopeId, version])
+  @@index([definitionId, scopeType, scopeId, status])
+  @@map("parametre_values")
+  @@schema("parametrage")
+}
+
+/// Journal de toutes les modifications (append-only).
+model ParametreChangelog {
+  id           String    @id @default(uuid()) @db.Uuid
+  definitionId String    @map("definition_id") @db.Uuid
+  scopeType    ScopeType @map("scope_type")
+  scopeId      String    @default("*") @map("scope_id")
+  action       String // CREATE_DRAFT | PUBLISH | APPROVE | ROLLBACK
+  oldValue     Json?     @map("old_value")
+  newValue     Json?     @map("new_value")
+  reason       String?
+  actorId      String?   @map("actor_id") @db.Uuid
+  ip           String?
+  occurredAt   DateTime  @default(now()) @map("occurred_at") @db.Timestamptz
+
+  definition ParametreDefinition @relation(fields: [definitionId], references: [id])
+
+  @@index([definitionId, occurredAt])
+  @@map("parametre_changelog")
+  @@schema("parametrage")
+}
+
+// ───────────────────────────── shared ─────────────────────────────
+
+model Role {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  label       String
+  system      Boolean  @default(false)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  createdBy   String?  @map("created_by") @db.Uuid
+  updatedBy   String?  @map("updated_by") @db.Uuid
+
+  permissions RolePermission[]
+  users       UserRole[]
+
+  @@map("roles")
+  @@schema("shared")
+}
+
+model Permission {
+  id        String   @id @default(uuid()) @db.Uuid
+  /// {PREFIXE}_{RESSOURCE}_{ACTION}
+  code      String   @unique
+  module    String
+  resource  String
+  action    String
+  label     String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  roles RolePermission[]
+
+  @@index([module])
+  @@map("permissions")
+  @@schema("shared")
+}
+
+model RolePermission {
+  roleId       String @map("role_id") @db.Uuid
+  permissionId String @map("permission_id") @db.Uuid
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+  @@schema("shared")
+}
+
+/// Journal d'audit inaltérable : append-only, chaîné par hachage.
+/// Le rôle SQL de l'application n'a pas le droit UPDATE/DELETE (voir la migration).
+model AuditLog {
+  id             String   @id @default(uuid()) @db.Uuid
+  /// Ordre d'insertion : base de la chaîne de hachage (le serveur d'horloge peut varier d'un réplica à l'autre).
+  seq            BigInt   @unique @default(autoincrement())
+  etablissementId String? @map("etablissement_id") @db.Uuid
+  userId         String?  @map("user_id") @db.Uuid
+  action         String
+  resource       String
+  resourceId     String?  @map("resource_id")
+  patientId      String?  @map("patient_id") @db.Uuid
+  result         String // SUCCESS | DENIED | FAILURE
+  ip             String?
+  userAgent      String?  @map("user_agent")
+  correlationId  String?  @map("correlation_id")
+  details        Json?
+  prevHash       String?  @map("prev_hash")
+  hash           String
+  occurredAt     DateTime @default(now()) @map("occurred_at") @db.Timestamptz
+
+  @@index([patientId, occurredAt])
+  @@index([userId, occurredAt])
+  @@map("audit_logs")
+  @@schema("shared")
+}
+
+enum OutboxStatus {
+  PENDING
+  PUBLISHED
+  FAILED
+
+  @@map("outbox_status")
+  @@schema("shared")
+}
+
+/// Pattern outbox : l'événement est écrit dans la même transaction que la donnée.
+model OutboxEvent {
+  id              String       @id @default(uuid()) @db.Uuid
+  eventType       String       @map("event_type")
+  etablissementId String?      @map("etablissement_id") @db.Uuid
+  correlationId   String?      @map("correlation_id")
+  actorId         String?      @map("actor_id") @db.Uuid
+  payload         Json
+  status          OutboxStatus @default(PENDING)
+  attempts        Int          @default(0)
+  availableAt     DateTime     @default(now()) @map("available_at") @db.Timestamptz
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  publishedAt     DateTime?    @map("published_at") @db.Timestamptz
+  lastError       String?      @map("last_error")
+
+  @@index([status, availableAt])
+  @@map("outbox_events")
+  @@schema("shared")
+}
+
+// ───────────────────────────── auth ─────────────────────────────
+
+enum UserStatus {
+  ACTIVE
+  LOCKED
+  DISABLED
+
+  @@map("user_status")
+  @@schema("auth")
+}
+
+model User {
+  id                String     @id @default(uuid()) @db.Uuid
+  etablissementId   String     @map("etablissement_id") @db.Uuid
+  email             String     @unique
+  displayName       String     @map("display_name")
+  passwordHash      String     @map("password_hash")
+  passwordChangedAt DateTime   @default(now()) @map("password_changed_at") @db.Timestamptz
+  status            UserStatus @default(ACTIVE)
+  failedAttempts    Int        @default(0) @map("failed_attempts")
+  lockedUntil       DateTime?  @map("locked_until") @db.Timestamptz
+  /// Attribut ABAC : service de rattachement
+  serviceId         String?    @map("service_id") @db.Uuid
+  mfaEnabled        Boolean    @default(false) @map("mfa_enabled")
+  /// Secret TOTP chiffré (AES-256-GCM applicatif)
+  mfaSecretEnc      String?    @map("mfa_secret_enc")
+  lastLoginAt       DateTime?  @map("last_login_at") @db.Timestamptz
+  createdAt         DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+  createdBy         String?    @map("created_by") @db.Uuid
+  updatedBy         String?    @map("updated_by") @db.Uuid
+  deletedAt         DateTime?  @map("deleted_at") @db.Timestamptz
+  deletedBy         String?    @map("deleted_by") @db.Uuid
+
+  etablissement Etablissement @relation(fields: [etablissementId], references: [id])
+  roles         UserRole[]
+  refreshTokens RefreshToken[]
+
+  @@index([etablissementId])
+  @@map("users")
+  @@schema("auth")
+}
+
+model UserRole {
+  userId    String   @map("user_id") @db.Uuid
+  roleId    String   @map("role_id") @db.Uuid
+  grantedBy String?  @map("granted_by") @db.Uuid
+  grantedAt DateTime @default(now()) @map("granted_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+  @@schema("auth")
+}
+
+/// Refresh tokens à rotation : un jeton réutilisé révoque toute sa famille.
+model RefreshToken {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  familyId     String    @map("family_id") @db.Uuid
+  tokenHash    String    @unique @map("token_hash")
+  expiresAt    DateTime  @map("expires_at") @db.Timestamptz
+  revokedAt    DateTime? @map("revoked_at") @db.Timestamptz
+  replacedById String?   @map("replaced_by_id") @db.Uuid
+  ip           String?
+  userAgent    String?   @map("user_agent")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@map("refresh_tokens")
+  @@schema("auth")
+}
