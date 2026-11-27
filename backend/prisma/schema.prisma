@@ -11,7 +11,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
-  schemas  = ["auth", "parametrage", "shared", "patient"]
+  schemas  = ["auth", "parametrage", "shared", "patients"]
 }
 
 // ───────────────────────────── parametrage ─────────────────────────────
@@ -336,7 +336,7 @@ enum PatientSex {
   UNKNOWN
 
   @@map("patient_sex")
-  @@schema("patient")
+  @@schema("patients")
 }
 
 enum Confidentiality {
@@ -344,7 +344,7 @@ enum Confidentiality {
   RESTRICTED
 
   @@map("confidentiality")
-  @@schema("patient")
+  @@schema("patients")
 }
 
 model Patient {
@@ -379,7 +379,7 @@ model Patient {
   @@index([etablissementId, lastNameNorm])
   @@index([etablissementId, nationalIdHash])
   @@map("patients")
-  @@schema("patient")
+  @@schema("patients")
 }
 
 model MrnCounter {
@@ -389,7 +389,7 @@ model MrnCounter {
 
   @@id([etablissementId, year])
   @@map("mrn_counters")
-  @@schema("patient")
+  @@schema("patients")
 }
 
 enum MergeStatus {
@@ -398,7 +398,7 @@ enum MergeStatus {
   REJECTED
 
   @@map("merge_status")
-  @@schema("patient")
+  @@schema("patients")
 }
 
 model PatientMerge {
@@ -418,5 +418,5 @@ model PatientMerge {
   @@index([sourceId])
   @@index([targetId])
   @@map("patient_merges")
-  @@schema("patient")
+  @@schema("patients")
 }

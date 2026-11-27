@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PARAMETRE_CATALOG, PARAMETRAGE_PERMISSIONS } from '../../src/modules/parametrage/catalog';
 import { AUTH_PERMISSION_CATALOG } from '../../src/modules/auth/catalog';
-import { PATIENT_PERMISSION_CATALOG } from '../../src/modules/patient/catalog';
+import { PATIENT_PERMISSION_CATALOG } from '../../src/modules/patients/catalog';
 import { hashPassword } from '../../src/core/security/password';
 
 const ROLES = [
@@ -40,7 +40,7 @@ async function main() {
   const permissions = [
     ...PARAMETRAGE_PERMISSIONS.map((p) => ({ ...p, module: 'parametrage' })),
     ...AUTH_PERMISSION_CATALOG.map((p) => ({ ...p, module: 'auth' })),
-    ...PATIENT_PERMISSION_CATALOG.map((p) => ({ ...p, module: 'patient' })),
+    ...PATIENT_PERMISSION_CATALOG.map((p) => ({ ...p, module: 'patients' })),
   ];
   for (const p of permissions) {
     await prisma.permission.upsert({ where: { code: p.code }, update: {}, create: p });

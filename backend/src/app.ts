@@ -11,8 +11,8 @@ import { createErrorHandler, createMiddlewares, notFoundHandler, requestContext 
 import { JwtService } from './core/security/jwt';
 import { createAuthModule } from './modules/auth';
 import { PrismaAuthRepository, type AuthRepository } from './modules/auth/repositories/auth.repository';
-import { createPatientModule, PrismaPatientRepository } from './modules/patient';
-import type { PatientRepository } from './modules/patient/repositories/patient.repository';
+import { createPatientModule, PrismaPatientRepository } from './modules/patients';
+import type { PatientRepository } from './modules/patients/repositories/patient.repository';
 import { createParametrageModule } from './modules/parametrage';
 import { PrismaParametrageRepository, type ParametrageRepository } from './modules/parametrage/repositories/parametrage.repository';
 

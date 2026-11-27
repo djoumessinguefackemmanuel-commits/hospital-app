@@ -1,10 +1,10 @@
 import { randomBytes } from 'node:crypto';
 import { NoopUnitOfWork } from '../../src/core/database/prisma';
-import type { PatientRecord } from '../../src/modules/patient/models/patient.model';
-import type { PatientRepository } from '../../src/modules/patient/repositories/patient.repository';
-import { formatMrn, maskNationalId, nationalIdHash, normalizeName, scoreCandidate, similarity } from '../../src/modules/patient/services/patient.logic';
-import { MergeService } from '../../src/modules/patient/services/merge.service';
-import { PatientService } from '../../src/modules/patient/services/patient.service';
+import type { PatientRecord } from '../../src/modules/patients/models/patient.model';
+import type { PatientRepository } from '../../src/modules/patients/repositories/patient.repository';
+import { formatMrn, maskNationalId, nationalIdHash, normalizeName, scoreCandidate, similarity } from '../../src/modules/patients/services/patient.logic';
+import { MergeService } from '../../src/modules/patients/services/merge.service';
+import { PatientService } from '../../src/modules/patients/services/patient.service';
 
 const KEY = randomBytes(32).toString('base64');
 
