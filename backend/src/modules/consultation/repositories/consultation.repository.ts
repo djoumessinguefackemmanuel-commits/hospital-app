@@ -45,8 +45,20 @@ export class PrismaConsultationRepository implements ConsultationRepository {
   }
 
   async createAppointment(input: NewAppointment, tx?: Tx) {
+    const db = dbOf(this.prisma, tx);
+    if (tx) {
+      // Sérialise les réservations d'un même praticien : le conflit est détecté par une requête normale
+      // (une erreur SQL dans une transaction interactive la laisserait ouverte). La contrainte
+      // d'exclusion de la migration reste le filet de sécurité ultime.
+      await db.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${input.practitionerId}, 727002))`;
+      const clash = await db.appointment.findFirst({
+        where: { practitionerId: input.practitionerId, status: 'BOOKED', startsAt: { lt: input.endsAt }, endsAt: { gt: input.startsAt } },
+        select: { id: true },
+      });
+      if (clash) throw new ConflictError('Ce créneau vient d\'être réservé', 'slot_taken');
+    }
     try {
-      return (await dbOf(this.prisma, tx).appointment.create({ data: input })) as AppointmentRecord;
+      return (await db.appointment.create({ data: input })) as AppointmentRecord;
     } catch (err) {
       if (isExclusionViolation(err)) throw new ConflictError('Ce créneau vient d\'être réservé', 'slot_taken');
       throw err;

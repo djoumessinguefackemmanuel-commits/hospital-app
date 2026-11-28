@@ -51,6 +51,8 @@ maybe('API patients (PostgreSQL réel)', () => {
     vip = await token('pat-vip', ['PATIENT_DOSSIER_READ', 'PATIENT_DOSSIER_CREATE', 'PATIENT_DOSSIER_READ_RESTRICTED']);
   });
   afterAll(async () => {
+    // L'audit est écrit à la fin de la réponse (hors requête) : on laisse les écritures en cours se terminer.
+    await new Promise((r) => setTimeout(r, 500));
     await prisma.$disconnect();
   });
 

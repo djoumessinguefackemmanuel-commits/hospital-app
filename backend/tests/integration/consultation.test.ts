@@ -60,6 +60,8 @@ maybe('API consultation (PostgreSQL réel)', () => {
     patientB = await mk('2');
   });
   afterAll(async () => {
+    // L'audit est écrit à la fin de la réponse (hors requête) : on laisse les écritures en cours se terminer.
+    await new Promise((r) => setTimeout(r, 500));
     await prisma.$disconnect();
   });
 

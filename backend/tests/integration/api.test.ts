@@ -67,6 +67,8 @@ maybe('API (PostgreSQL réel)', () => {
     etablissementId = (await prisma.etablissement.findFirstOrThrow({ where: { code: 'PRINCIPAL' } })).id;
   });
   afterAll(async () => {
+    // L'audit est écrit à la fin de la réponse (hors requête) : on laisse les écritures en cours se terminer.
+    await new Promise((r) => setTimeout(r, 500));
     await prisma.$disconnect();
   });
 
