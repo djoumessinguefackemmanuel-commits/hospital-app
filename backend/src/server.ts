@@ -1,4 +1,4 @@
-import { buildApp, prismaRepositories } from './app';
+import { buildContainer, prismaRepositories } from './app';
 import { PrismaAuditWriter } from './core/audit/audit';
 import { MemoryCache, RedisCache, type Cache } from './core/cache/cache';
 import { PrismaUnitOfWork, createPrisma } from './core/database/prisma';
@@ -24,7 +24,7 @@ async function main() {
 
   const store = new PrismaOutboxStore(prisma);
   const bus = new EventBus(store);
-  const app = buildApp({
+  const { app, notifications } = buildContainer({
     logger,
     bus,
     uow: new PrismaUnitOfWork(prisma),
@@ -38,12 +38,14 @@ async function main() {
 
   const relay = new OutboxRelay(store, bus, logger);
   relay.start(env.OUTBOX_POLL_MS);
+  notifications.start(30_000);
 
   const server = app.listen(env.PORT, () => logger.info({ port: env.PORT }, 'HMS backend démarré'));
 
   const shutdown = (signal: string) => {
     logger.info({ signal }, 'arrêt en cours');
     relay.stop();
+    notifications.stop();
     server.close(async () => {
       await prisma.$disconnect();
       redis?.disconnect();

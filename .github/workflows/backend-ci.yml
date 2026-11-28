@@ -42,6 +42,8 @@ jobs:
         run: PGPASSWORD=hms psql -h localhost -U hms -d hms -v ON_ERROR_STOP=1 -q -f prisma/migrations/20261127110000_patient_merge/migration.sql
       - name: Migration SQL consultation
         run: PGPASSWORD=hms psql -h localhost -U hms -d hms -v ON_ERROR_STOP=1 -q -f prisma/migrations/20261127120000_consultation/migration.sql
+      - name: Migration SQL notifications
+        run: PGPASSWORD=hms psql -h localhost -U hms -d hms -v ON_ERROR_STOP=1 -q -f prisma/migrations/20261128000000_notifications/migration.sql
       - name: Seed
         run: npx tsx prisma/seed/index.ts
         env:

@@ -96,6 +96,7 @@ export const PARAMETRE_CATALOG: NewParametreDefinition[] = [
   def('billing.invoice.due_days', 'INT', 'Délai de paiement des factures (jours)', 30, { validation: { min: 0, max: 365 }, permission: 'PARAM_FACTURATION_UPDATE' }),
 
   // Notifications
+  def('notif.channels.enabled', 'LIST', 'Canaux de notification actifs', ['email', 'sms'], { validation: { itemType: 'string', enum: ['email', 'sms'], minItems: 0 }, permission: 'PARAM_NOTIF_UPDATE' }),
   def('notif.quiet_hours', 'MAP', 'Plage sans envoi de notifications', { start: '21:00', end: '07:00' }, { permission: 'PARAM_NOTIF_UPDATE' }),
   def('notif.retry.max', 'INT', 'Réessais d\'envoi de notification', 3, { validation: { min: 0, max: 10 }, permission: 'PARAM_NOTIF_UPDATE' }),
 ];

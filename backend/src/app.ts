@@ -2,7 +2,7 @@ import type { PrismaClient } from '@prisma/client';
 import cors from 'cors';
 import express, { type Express } from 'express';
 import helmet from 'helmet';
-import type { AuditWriter, PatientDirectory } from './shared/contracts';
+import type { AuditWriter, ContactDirectory, PatientDirectory } from './shared/contracts';
 import type { UnitOfWork } from './shared/contracts';
 import type { Cache } from './core/cache/cache';
 import { EventBus } from './core/events/event-bus';
@@ -13,6 +13,8 @@ import { createAuthModule } from './modules/auth';
 import { PrismaAuthRepository, type AuthRepository } from './modules/auth/repositories/auth.repository';
 import { createConsultationModule, PrismaConsultationRepository } from './modules/consultation';
 import type { ConsultationRepository } from './modules/consultation/repositories/consultation.repository';
+import { createNotificationsModule, PrismaNotificationRepository, type NotificationSender } from './modules/notifications';
+import type { NotificationRepository } from './modules/notifications/repositories/notification.repository';
 import { createPatientModule, PrismaPatientRepository } from './modules/patients';
 import type { PatientRepository } from './modules/patients/repositories/patient.repository';
 import { createParametrageModule } from './modules/parametrage';
@@ -32,10 +34,13 @@ export interface AppDeps {
   parametrageRepo: ParametrageRepository;
   patientRepo: PatientRepository;
   consultationRepo: ConsultationRepository;
+  notificationRepo: NotificationRepository;
+  /** Canaux d'envoi réels ; par défaut un canal « journal » qui n'envoie rien. */
+  senders?: NotificationSender[];
 }
 
 export function prismaRepositories(prisma: PrismaClient) {
-  return { authRepo: new PrismaAuthRepository(prisma), parametrageRepo: new PrismaParametrageRepository(prisma), patientRepo: new PrismaPatientRepository(prisma), consultationRepo: new PrismaConsultationRepository(prisma) };
+  return { authRepo: new PrismaAuthRepository(prisma), parametrageRepo: new PrismaParametrageRepository(prisma), patientRepo: new PrismaPatientRepository(prisma), consultationRepo: new PrismaConsultationRepository(prisma), notificationRepo: new PrismaNotificationRepository(prisma) };
 }
 
 /**
@@ -43,6 +48,10 @@ export function prismaRepositories(prisma: PrismaClient) {
  * (jamais d'import direct d'un module vers un autre, docs/00-conventions.md §5).
  */
 export function buildApp(deps: AppDeps): Express {
+  return buildContainer(deps).app;
+}
+
+export function buildContainer(deps: AppDeps) {
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', 1);
@@ -96,6 +105,23 @@ export function buildApp(deps: AppDeps): Express {
     patients: patientDirectory,
   });
 
+  const contactDirectory: ContactDirectory = {
+    getContact: async (patientId, etablissementId) => {
+      let p = await deps.patientRepo.findById(patientId);
+      if (p?.mergedIntoId) p = await deps.patientRepo.findById(p.mergedIntoId); // suit un dossier fusionné
+      if (!p || p.etablissementId !== etablissementId) return null;
+      return { email: p.email ?? undefined, phone: p.phone ?? undefined };
+    },
+  };
+  const notifications = createNotificationsModule({
+    repo: deps.notificationRepo,
+    bus: deps.bus,
+    settings: parametrage.service,
+    contacts: contactDirectory,
+    logger: deps.logger,
+    senders: deps.senders,
+  });
+
   const middlewares = createMiddlewares({
     jwt,
     access: auth.access,
@@ -115,9 +141,10 @@ export function buildApp(deps: AppDeps): Express {
   app.use('/api/v1/auth', auth.createRouter(middlewares));
   app.use('/api/v1/patients', patient.createRouter(middlewares));
   app.use('/api/v1/consultation', consultation.createRouter(middlewares));
+  app.use('/api/v1/notifications', notifications.createRouter(middlewares));
   app.use('/api/v1/parametrage', parametrage.createRouter(middlewares));
 
   app.use(notFoundHandler);
   app.use(createErrorHandler(deps.logger));
-  return app;
+  return { app, notifications: notifications.service };
 }

@@ -5,6 +5,7 @@ import { PARAMETRE_CATALOG, PARAMETRAGE_PERMISSIONS } from '../../src/modules/pa
 import { AUTH_PERMISSION_CATALOG } from '../../src/modules/auth/catalog';
 import { PATIENT_PERMISSION_CATALOG } from '../../src/modules/patients/catalog';
 import { CONSULT_PERMISSION_CATALOG } from '../../src/modules/consultation/catalog';
+import { NOTIF_PERMISSION_CATALOG } from '../../src/modules/notifications/catalog';
 import { hashPassword } from '../../src/core/security/password';
 
 const ROLES = [
@@ -20,7 +21,7 @@ const label = (code: string) => code.toLowerCase().replace(/_/g, ' ').replace(/^
 const CLINICAL_READERS = ['MEDECIN', 'CHIRURGIEN', 'ANESTHESISTE', 'OBSTETRICIEN', 'PEDIATRE', 'IDE', 'IADE', 'IBODE', 'SAGE_FEMME', 'CHEF_SERVICE'];
 const PRACTITIONERS = ['MEDECIN', 'CHIRURGIEN', 'OBSTETRICIEN', 'PEDIATRE'];
 const ROLE_PERMISSIONS: Record<string, (code: string) => boolean> = {
-  RECEPTIONNISTE: (c) => ['PATIENT_DOSSIER_READ', 'PATIENT_DOSSIER_CREATE', 'PATIENT_DOSSIER_UPDATE', 'PATIENT_FUSION_REQUEST', 'CONSULT_RDV_READ', 'CONSULT_RDV_CREATE', 'CONSULT_RDV_CANCEL'].includes(c),
+  RECEPTIONNISTE: (c) => ['PATIENT_DOSSIER_READ', 'PATIENT_DOSSIER_CREATE', 'PATIENT_DOSSIER_UPDATE', 'PATIENT_FUSION_REQUEST', 'CONSULT_RDV_READ', 'CONSULT_RDV_CREATE', 'CONSULT_RDV_CANCEL', 'NOTIF_NOTIFICATION_READ'].includes(c),
   ARCHIVISTE: (c) => ['PATIENT_DOSSIER_READ', 'PATIENT_DOSSIER_UPDATE', 'PATIENT_FUSION_REQUEST'].includes(c),
   ...Object.fromEntries(CLINICAL_READERS.map((r) => [r, (c: string) => c === 'PATIENT_DOSSIER_READ' || c === 'CONSULT_RDV_READ'])),
   ...Object.fromEntries(
@@ -48,6 +49,7 @@ async function main() {
     ...AUTH_PERMISSION_CATALOG.map((p) => ({ ...p, module: 'auth' })),
     ...PATIENT_PERMISSION_CATALOG.map((p) => ({ ...p, module: 'patients' })),
     ...CONSULT_PERMISSION_CATALOG.map((p) => ({ ...p, module: 'consultation' })),
+    ...NOTIF_PERMISSION_CATALOG.map((p) => ({ ...p, module: 'notifications' })),
   ];
   for (const p of permissions) {
     await prisma.permission.upsert({ where: { code: p.code }, update: {}, create: p });

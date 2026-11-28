@@ -11,7 +11,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
-  schemas  = ["auth", "parametrage", "shared", "patients", "consultation"]
+  schemas  = ["auth", "parametrage", "shared", "patients", "consultation", "notifications"]
 }
 
 // ───────────────────────────── parametrage ─────────────────────────────
@@ -469,4 +469,49 @@ model Appointment {
   @@index([etablissementId, startsAt])
   @@map("appointments")
   @@schema("consultation")
+}
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+
+  @@map("notification_channel")
+  @@schema("notifications")
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  CANCELLED
+  SKIPPED
+
+  @@map("notification_status")
+  @@schema("notifications")
+}
+
+/// Une notification planifiée. `dedupeKey` rend la création idempotente (les événements arrivent au moins une fois).
+model Notification {
+  id              String              @id @default(uuid()) @db.Uuid
+  etablissementId String              @map("etablissement_id") @db.Uuid
+  patientId       String              @map("patient_id") @db.Uuid
+  channel         NotificationChannel
+  template        String
+  subjectType     String              @map("subject_type")
+  subjectId       String              @map("subject_id") @db.Uuid
+  payload         Json                @default("{}")
+  dedupeKey       String              @unique @map("dedupe_key")
+  status          NotificationStatus  @default(PENDING)
+  scheduledFor    DateTime            @map("scheduled_for") @db.Timestamptz
+  attempts        Int                 @default(0)
+  lastError       String?             @map("last_error")
+  sentAt          DateTime?           @map("sent_at") @db.Timestamptz
+  createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime            @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([status, scheduledFor])
+  @@index([subjectType, subjectId])
+  @@index([etablissementId, patientId])
+  @@map("notifications")
+  @@schema("notifications")
 }

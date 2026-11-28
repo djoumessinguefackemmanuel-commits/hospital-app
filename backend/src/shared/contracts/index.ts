@@ -109,3 +109,15 @@ export interface AuditWriter {
 export interface PatientDirectory {
   isAccessible(patientId: string, actor: { etablissementId: string; permissions: string[] }): Promise<boolean>;
 }
+
+// ── Contact patient ───────────────────────────────────────────────────────────
+
+export interface PatientContact {
+  email?: string;
+  phone?: string;
+}
+
+/** Coordonnées de contact d'un patient (suit les dossiers fusionnés) : implémenté par le module patients. */
+export interface ContactDirectory {
+  getContact(patientId: string, etablissementId: string): Promise<PatientContact | null>;
+}
