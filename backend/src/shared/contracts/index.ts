@@ -47,6 +47,8 @@ export const EventTypes = {
   PATIENT_CREATED: 'patient.created',
   PATIENT_UPDATED: 'patient.updated',
   PATIENT_MERGED: 'patient.merged',
+  RDV_CREATED: 'rdv.created',
+  RDV_CANCELLED: 'rdv.cancelled',
 } as const;
 
 // ── Paramétrage ───────────────────────────────────────────────────────────────
@@ -99,4 +101,11 @@ export interface AuditEntry {
 
 export interface AuditWriter {
   write(entry: AuditEntry): Promise<void>;
+}
+
+// ── Patients ──────────────────────────────────────────────────────────────────
+
+/** Existence et visibilité d'un patient pour un appelant : implémenté par le module patients. */
+export interface PatientDirectory {
+  isAccessible(patientId: string, actor: { etablissementId: string; permissions: string[] }): Promise<boolean>;
 }

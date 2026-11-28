@@ -11,7 +11,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
-  schemas  = ["auth", "parametrage", "shared", "patients"]
+  schemas  = ["auth", "parametrage", "shared", "patients", "consultation"]
 }
 
 // ───────────────────────────── parametrage ─────────────────────────────
@@ -419,4 +419,54 @@ model PatientMerge {
   @@index([targetId])
   @@map("patient_merges")
   @@schema("patients")
+}
+
+enum AppointmentStatus {
+  BOOKED
+  CANCELLED
+  COMPLETED
+  NO_SHOW
+
+  @@map("appointment_status")
+  @@schema("consultation")
+}
+
+/// Plage hebdomadaire récurrente d'un praticien (heure locale de l'établissement, en minutes depuis minuit)
+model ScheduleRule {
+  id              String   @id @default(uuid()) @db.Uuid
+  etablissementId String   @map("etablissement_id") @db.Uuid
+  practitionerId  String   @map("practitioner_id") @db.Uuid
+  /// 1 = lundi … 7 = dimanche
+  weekday         Int
+  startMinute     Int      @map("start_minute")
+  endMinute       Int      @map("end_minute")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([practitionerId])
+  @@map("schedule_rules")
+  @@schema("consultation")
+}
+
+/// L'unicité d'un créneau est garantie par une contrainte d'exclusion PostgreSQL (voir migration), pas par Prisma.
+model Appointment {
+  id              String            @id @default(uuid()) @db.Uuid
+  etablissementId String            @map("etablissement_id") @db.Uuid
+  practitionerId  String            @map("practitioner_id") @db.Uuid
+  patientId       String            @map("patient_id") @db.Uuid
+  startsAt        DateTime          @map("starts_at") @db.Timestamptz
+  endsAt          DateTime          @map("ends_at") @db.Timestamptz
+  status          AppointmentStatus @default(BOOKED)
+  reason          String?
+  cancelReason    String?           @map("cancel_reason")
+  cancelledBy     String?           @map("cancelled_by") @db.Uuid
+  cancelledAt     DateTime?         @map("cancelled_at") @db.Timestamptz
+  createdBy       String            @map("created_by") @db.Uuid
+  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime          @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([practitionerId, startsAt])
+  @@index([patientId, startsAt])
+  @@index([etablissementId, startsAt])
+  @@map("appointments")
+  @@schema("consultation")
 }

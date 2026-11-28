@@ -4,6 +4,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { PARAMETRE_CATALOG, PARAMETRAGE_PERMISSIONS } from '../../src/modules/parametrage/catalog';
 import { AUTH_PERMISSION_CATALOG } from '../../src/modules/auth/catalog';
 import { PATIENT_PERMISSION_CATALOG } from '../../src/modules/patients/catalog';
+import { CONSULT_PERMISSION_CATALOG } from '../../src/modules/consultation/catalog';
 import { hashPassword } from '../../src/core/security/password';
 
 const ROLES = [
@@ -17,10 +18,15 @@ const label = (code: string) => code.toLowerCase().replace(/_/g, ' ').replace(/^
 
 /** Séparation des tâches : l'approbateur d'un paramètre critique n'est pas l'administrateur qui le modifie. */
 const CLINICAL_READERS = ['MEDECIN', 'CHIRURGIEN', 'ANESTHESISTE', 'OBSTETRICIEN', 'PEDIATRE', 'IDE', 'IADE', 'IBODE', 'SAGE_FEMME', 'CHEF_SERVICE'];
+const PRACTITIONERS = ['MEDECIN', 'CHIRURGIEN', 'OBSTETRICIEN', 'PEDIATRE'];
 const ROLE_PERMISSIONS: Record<string, (code: string) => boolean> = {
-  RECEPTIONNISTE: (c) => ['PATIENT_DOSSIER_READ', 'PATIENT_DOSSIER_CREATE', 'PATIENT_DOSSIER_UPDATE', 'PATIENT_FUSION_REQUEST'].includes(c),
+  RECEPTIONNISTE: (c) => ['PATIENT_DOSSIER_READ', 'PATIENT_DOSSIER_CREATE', 'PATIENT_DOSSIER_UPDATE', 'PATIENT_FUSION_REQUEST', 'CONSULT_RDV_READ', 'CONSULT_RDV_CREATE', 'CONSULT_RDV_CANCEL'].includes(c),
   ARCHIVISTE: (c) => ['PATIENT_DOSSIER_READ', 'PATIENT_DOSSIER_UPDATE', 'PATIENT_FUSION_REQUEST'].includes(c),
-  ...Object.fromEntries(CLINICAL_READERS.map((r) => [r, (c: string) => c === 'PATIENT_DOSSIER_READ'])),
+  ...Object.fromEntries(CLINICAL_READERS.map((r) => [r, (c: string) => c === 'PATIENT_DOSSIER_READ' || c === 'CONSULT_RDV_READ'])),
+  ...Object.fromEntries(
+    PRACTITIONERS.map((r) => [r, (c: string) => ['PATIENT_DOSSIER_READ', 'CONSULT_RDV_READ', 'CONSULT_RDV_PRACTITIONER'].includes(c)]),
+  ),
+  CHEF_SERVICE: (c) => ['PATIENT_DOSSIER_READ', 'CONSULT_RDV_READ', 'CONSULT_RDV_CANCEL', 'CONSULT_RDV_CANCEL_LATE', 'CONSULT_AGENDA_UPDATE'].includes(c),
   ADMIN_SYSTEME: (c) => c !== 'PARAM_PARAMETRE_APPROVE',
   DIRECTEUR: (c) => ['PARAM_PARAMETRE_READ', 'PARAM_PARAMETRE_APPROVE', 'AUTH_USER_READ', 'AUTH_ROLE_READ', 'PATIENT_FUSION_APPROVE', 'PATIENT_FUSION_REQUEST'].includes(c),
   AUDITEUR: (c) => ['PARAM_PARAMETRE_READ', 'AUTH_USER_READ', 'AUTH_ROLE_READ', 'AUTH_ROLE_EXPORT'].includes(c),
@@ -41,6 +47,7 @@ async function main() {
     ...PARAMETRAGE_PERMISSIONS.map((p) => ({ ...p, module: 'parametrage' })),
     ...AUTH_PERMISSION_CATALOG.map((p) => ({ ...p, module: 'auth' })),
     ...PATIENT_PERMISSION_CATALOG.map((p) => ({ ...p, module: 'patients' })),
+    ...CONSULT_PERMISSION_CATALOG.map((p) => ({ ...p, module: 'consultation' })),
   ];
   for (const p of permissions) {
     await prisma.permission.upsert({ where: { code: p.code }, update: {}, create: p });

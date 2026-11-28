@@ -87,6 +87,7 @@ export const PARAMETRE_CATALOG: NewParametreDefinition[] = [
   def('patient.mrn.format', 'STRING', 'Format du numéro de dossier', '{SITE}-{YYYY}-{SEQ:6}', { validation: { min: 3, max: 60 }, permission: 'PARAM_PATIENT_UPDATE', critical: true }),
   def('patient.duplicate.threshold', 'DECIMAL', 'Seuil de similarité pour doublon', 0.85, { validation: { min: 0.5, max: 1 }, permission: 'PARAM_PATIENT_UPDATE' }),
   def('patient.merge.requires_approval', 'BOOL', 'Fusion de dossiers soumise à approbation', true, { permission: 'PARAM_PATIENT_UPDATE' }),
+  def('appointment.slot_minutes', 'INT', 'Durée d\'un créneau (minutes)', 20, { validation: { min: 5, max: 240 }, permission: 'PARAM_RDV_UPDATE' }),
   def('appointment.cancel_deadline_h', 'INT', 'Délai d\'annulation d\'un rendez-vous (heures)', 24, { validation: { min: 0, max: 168 }, permission: 'PARAM_RDV_UPDATE' }),
   def('appointment.reminder_offsets_h', 'LIST', 'Rappels avant rendez-vous (heures)', [48, 2], { validation: { itemType: 'int', maxItems: 5 }, permission: 'PARAM_RDV_UPDATE' }),
 

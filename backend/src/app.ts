@@ -2,7 +2,7 @@ import type { PrismaClient } from '@prisma/client';
 import cors from 'cors';
 import express, { type Express } from 'express';
 import helmet from 'helmet';
-import type { AuditWriter } from './shared/contracts';
+import type { AuditWriter, PatientDirectory } from './shared/contracts';
 import type { UnitOfWork } from './shared/contracts';
 import type { Cache } from './core/cache/cache';
 import { EventBus } from './core/events/event-bus';
@@ -11,6 +11,8 @@ import { createErrorHandler, createMiddlewares, notFoundHandler, requestContext 
 import { JwtService } from './core/security/jwt';
 import { createAuthModule } from './modules/auth';
 import { PrismaAuthRepository, type AuthRepository } from './modules/auth/repositories/auth.repository';
+import { createConsultationModule, PrismaConsultationRepository } from './modules/consultation';
+import type { ConsultationRepository } from './modules/consultation/repositories/consultation.repository';
 import { createPatientModule, PrismaPatientRepository } from './modules/patients';
 import type { PatientRepository } from './modules/patients/repositories/patient.repository';
 import { createParametrageModule } from './modules/parametrage';
@@ -29,10 +31,11 @@ export interface AppDeps {
   authRepo: AuthRepository;
   parametrageRepo: ParametrageRepository;
   patientRepo: PatientRepository;
+  consultationRepo: ConsultationRepository;
 }
 
 export function prismaRepositories(prisma: PrismaClient) {
-  return { authRepo: new PrismaAuthRepository(prisma), parametrageRepo: new PrismaParametrageRepository(prisma), patientRepo: new PrismaPatientRepository(prisma) };
+  return { authRepo: new PrismaAuthRepository(prisma), parametrageRepo: new PrismaParametrageRepository(prisma), patientRepo: new PrismaPatientRepository(prisma), consultationRepo: new PrismaConsultationRepository(prisma) };
 }
 
 /**
@@ -75,6 +78,24 @@ export function buildApp(deps: AppDeps): Express {
     encryptionKey: deps.encryptionKey,
   });
 
+  // Contrat PatientDirectory : branché ici pour que consultation n'importe jamais patients.
+  const patientDirectory: PatientDirectory = {
+    isAccessible: async (patientId, actor) => {
+      const p = await deps.patientRepo.findById(patientId);
+      if (!p || p.etablissementId !== actor.etablissementId || !p.active || p.mergedIntoId) return false;
+      return p.confidentiality === 'NORMAL' || actor.permissions.includes('PATIENT_DOSSIER_READ_RESTRICTED');
+    },
+  };
+  const consultation = createConsultationModule({
+    repo: deps.consultationRepo,
+    uow: deps.uow,
+    events: deps.bus,
+    bus: deps.bus,
+    settings: parametrage.service,
+    access: auth.access,
+    patients: patientDirectory,
+  });
+
   const middlewares = createMiddlewares({
     jwt,
     access: auth.access,
@@ -93,6 +114,7 @@ export function buildApp(deps: AppDeps): Express {
 
   app.use('/api/v1/auth', auth.createRouter(middlewares));
   app.use('/api/v1/patients', patient.createRouter(middlewares));
+  app.use('/api/v1/consultation', consultation.createRouter(middlewares));
   app.use('/api/v1/parametrage', parametrage.createRouter(middlewares));
 
   app.use(notFoundHandler);

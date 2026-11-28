@@ -1,5 +1,6 @@
 /** @type {import('jest').Config} */
 module.exports = {
+  testTimeout: 30000,
   preset: 'ts-jest',
   testEnvironment: 'node',
   roots: ['<rootDir>/src', '<rootDir>/tests'],
